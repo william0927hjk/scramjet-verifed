@@ -1,4 +1,7 @@
 // public/src/index.js
+// Source file for the browser bundle.
+// Render runs scripts/build-client.mjs during postinstall.
+
 import { Controller } from "@mercuryworkshop/scramjet-controller";
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
@@ -42,8 +45,7 @@ async function initScramjet() {
     updateViaCache: "none"
   });
 
-  const serviceWorker =
-    await waitForServiceWorker(registration);
+  const serviceWorker = await waitForServiceWorker(registration);
 
   if (!serviceWorker) {
     throw new Error("No active Scramjet service worker is available.");
@@ -52,9 +54,7 @@ async function initScramjet() {
   const wisp =
     `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/wisp/`;
 
-  const transport = new LibcurlClient({
-    wisp
-  });
+  const transport = new LibcurlClient({ wisp });
 
   controller = new Controller({
     serviceworker: serviceWorker,
@@ -81,8 +81,7 @@ function openProxy(url) {
     throw new Error("Scramjet controller is not ready.");
   }
 
-  const frame =
-    document.getElementById("viewerFrame");
+  const frame = document.getElementById("viewerFrame");
 
   if (!frame) {
     throw new Error("viewerFrame not found.");
@@ -91,8 +90,7 @@ function openProxy(url) {
   frame.style.display = "block";
 
   if (!viewerFrameController) {
-    viewerFrameController =
-      controller.createFrame(frame);
+    viewerFrameController = controller.createFrame(frame);
   }
 
   viewerFrameController.go(url);
@@ -106,15 +104,11 @@ window.ScramjetHub = {
 };
 
 initScramjet().catch(error => {
-  console.error(
-    "❌ Scramjet initialization failed:",
-    error
-  );
+  console.error("❌ Scramjet initialization failed:", error);
 
   window.dispatchEvent(
-    new CustomEvent(
-      "scramjet-controller-error",
-      { detail: error }
-    )
+    new CustomEvent("scramjet-controller-error", {
+      detail: error
+    })
   );
 });
