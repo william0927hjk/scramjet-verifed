@@ -1,36 +1,24 @@
 // public/src/index.js
-// Scramjet v2 controller bootstrap.
+import { Controller } from "@mercuryworkshop/scramjet-controller";
+import { defaultConfigDev } from "@mercuryworkshop/scramjet";
+import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 
 let controller = null;
-let viewerFrame = null;
+let viewerFrameController = null;
 
 async function waitForServiceWorker(registration, timeoutMs = 10000) {
-  if (!('serviceWorker' in navigator)) {
-    throw new Error('Service workers are not supported in this browser.');
-  }
-
   if (navigator.serviceWorker.controller) {
     return navigator.serviceWorker.controller;
   }
 
-  await navigator.serviceWorker.ready;
-
-  if (navigator.serviceWorker.controller) {
-    return navigator.serviceWorker.controller;
-  }
+  const ready = navigator.serviceWorker.ready.then(() =>
+    navigator.serviceWorker.controller || registration.active
+  );
 
   const changed = new Promise(resolve => {
-    const handler = () => {
-      navigator.serviceWorker.removeEventListener(
-        'controllerchange',
-        handler
-      );
-      resolve(navigator.serviceWorker.controller);
-    };
-
     navigator.serviceWorker.addEventListener(
-      'controllerchange',
-      handler,
+      "controllerchange",
+      () => resolve(navigator.serviceWorker.controller),
       { once: true }
     );
   });
@@ -40,164 +28,92 @@ async function waitForServiceWorker(registration, timeoutMs = 10000) {
       resolve(
         navigator.serviceWorker.controller ||
         registration.active ||
-        registration.waiting
+        null
       );
     }, timeoutMs);
   });
 
-  return Promise.race([changed, timeout]);
+  return Promise.race([ready, changed, timeout]);
 }
 
 async function initScramjet() {
-  // Load Scramjet's runtime first.
-  const scramjetCore = await import('/scramjet/scramjet.mjs');
-
-  globalThis.$scramjet = scramjetCore;
-
-  if (!globalThis.$scramjet.BareResponse) {
-    throw new Error(
-      'Scramjet core loaded, but BareResponse is missing.'
-    );
-  }
-
-  const ControllerModule =
-    await import('/controller/controller.api.js');
-
-  // Handle the different export shapes used by generated bundles.
-  const Controller =
-    ControllerModule.Controller ||
-    ControllerModule.default?.Controller ||
-    ControllerModule.default;
-
-  if (typeof Controller !== 'function') {
-    console.error(
-      'Controller module exports:',
-      ControllerModule
-    );
-
-    throw new Error(
-      'Scramjet controller bundle did not expose a Controller constructor.'
-    );
-  }
-
-  const transportModule =
-    await import('/clients/libcurl-client.js');
-
-  const LibcurlClient =
-    transportModule.default ||
-    transportModule.LibcurlClient ||
-    transportModule;
-
-  if (typeof LibcurlClient !== 'function') {
-    console.error(
-      'Transport module exports:',
-      transportModule
-    );
-
-    throw new Error(
-      'libcurl transport did not expose a constructor.'
-    );
-  }
-
-  const registration =
-    await navigator.serviceWorker.register('/sw.js', {
-      scope: '/',
-      updateViaCache: 'none'
-    });
+  const registration = await navigator.serviceWorker.register("/sw.js", {
+    scope: "/",
+    updateViaCache: "none"
+  });
 
   const serviceWorker =
     await waitForServiceWorker(registration);
 
   if (!serviceWorker) {
-    throw new Error(
-      'No active Scramjet service worker is available.'
-    );
+    throw new Error("No active Scramjet service worker is available.");
   }
 
   const wisp =
-    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/wisp/`;
+    `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/wisp/`;
 
-  const transport =
-    new LibcurlClient({ wisp });
+  const transport = new LibcurlClient({
+    wisp
+  });
 
-  const config =
-    scramjetCore.defaultConfigDev ||
-    scramjetCore.defaultConfig ||
-    undefined;
-
-  controller =
-    new Controller({
-      serviceworker: serviceWorker,
-      transport,
-      scramjetConfig: config
-    });
+  controller = new Controller({
+    serviceworker: serviceWorker,
+    transport,
+    scramjetConfig: defaultConfigDev
+  });
 
   await controller.wait();
 
-  console.log('✅ Scramjet controller ready');
-
   window.ScramjetHub = {
-    get controller() {
-      return controller;
-    },
+    controller,
     openProxy
   };
 
+  console.log("✅ Scramjet controller ready");
+
   window.dispatchEvent(
-    new Event('scramjet-controller-ready')
+    new Event("scramjet-controller-ready")
   );
 }
 
-function getOrCreateViewerFrame() {
-  if (!viewerFrame) {
-    viewerFrame =
-      document.getElementById('viewerFrame');
-  }
-
-  if (!viewerFrame) {
-    throw new Error('viewerFrame not found');
-  }
-
-  return viewerFrame;
-}
-
 function openProxy(url) {
-  if (!controller || !controller.isReady) {
-    throw new Error(
-      'Scramjet controller is not ready.'
-    );
+  if (!controller) {
+    throw new Error("Scramjet controller is not ready.");
   }
 
   const frame =
-    getOrCreateViewerFrame();
+    document.getElementById("viewerFrame");
 
-  frame.style.display = 'block';
+  if (!frame) {
+    throw new Error("viewerFrame not found.");
+  }
 
-  if (!window.ScramjetHub.viewerFrameController) {
-    window.ScramjetHub.viewerFrameController =
+  frame.style.display = "block";
+
+  if (!viewerFrameController) {
+    viewerFrameController =
       controller.createFrame(frame);
   }
 
-  window.ScramjetHub.viewerFrameController.go(url);
+  viewerFrameController.go(url);
 
-  return window.ScramjetHub.viewerFrameController;
+  return viewerFrameController;
 }
 
 window.ScramjetHub = {
   controller: null,
-  viewerFrameController: null,
   openProxy
 };
 
 initScramjet().catch(error => {
   console.error(
-    '❌ Scramjet initialization failed:',
+    "❌ Scramjet initialization failed:",
     error
   );
 
   window.dispatchEvent(
     new CustomEvent(
-      'scramjet-controller-error',
+      "scramjet-controller-error",
       { detail: error }
     )
   );
