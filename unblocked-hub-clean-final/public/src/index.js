@@ -1,5 +1,6 @@
 // public/src/index.js
-// Scramjet 2 controller bootstrap.
+// Scramjet v2 controller bootstrap.
+// The controller bundle expects Scramjet core exports at globalThis.$scramjet.
 
 let controller = null;
 let viewerFrame = null;
@@ -21,6 +22,7 @@ async function waitForServiceWorker(timeoutMs = 15000) {
 
   await new Promise(resolve => {
     const timer = setTimeout(resolve, timeoutMs);
+
     navigator.serviceWorker.addEventListener(
       'controllerchange',
       () => {
@@ -35,6 +37,17 @@ async function waitForServiceWorker(timeoutMs = 15000) {
 }
 
 async function initScramjet() {
+  // scramjet.js is the browser bundle used by proxied documents.
+  // scramjet.mjs is the ESM bundle whose exports the controller bundle expects
+  // to find through globalThis.$scramjet.
+  const scramjetCore = await import('/scramjet/scramjet.mjs');
+
+  globalThis.$scramjet = scramjetCore;
+
+  if (!globalThis.$scramjet.BareResponse) {
+    throw new Error('Scramjet core loaded, but BareResponse is missing.');
+  }
+
   const { Controller } = await import('/controller/controller.api.js');
   const { default: LibcurlClient } =
     await import('/clients/libcurl-client.js');
@@ -42,9 +55,7 @@ async function initScramjet() {
   const serviceWorker = await waitForServiceWorker();
 
   if (!serviceWorker) {
-    throw new Error(
-      'The service worker installed, but this page is not controlled yet. Reload once.'
-    );
+    throw new Error('No active service worker is controlling this page.');
   }
 
   const wisp =
@@ -54,40 +65,52 @@ async function initScramjet() {
 
   controller = new Controller({
     serviceworker: serviceWorker,
-    transport
+    transport,
+    scramjetConfig: scramjetCore.defaultConfigDev ?? scramjetCore.defaultConfig
   });
 
   await controller.wait();
 
   console.log('✅ Scramjet controller ready');
+
+  window.ScramjetHub = {
+    get controller() {
+      return controller;
+    },
+    openProxy
+  };
+
   window.dispatchEvent(new Event('scramjet-controller-ready'));
 }
 
 function getOrCreateViewerFrame() {
   if (!viewerFrame) {
     viewerFrame = document.getElementById('viewerFrame');
-    if (!viewerFrame) {
-      throw new Error('viewerFrame not found');
-    }
   }
+
+  if (!viewerFrame) {
+    throw new Error('viewerFrame not found');
+  }
+
   return viewerFrame;
 }
 
 export function openProxy(url) {
-  if (!controller || !controller.isReady) {
+  if (!controller) {
     throw new Error('Scramjet controller is not ready.');
   }
 
   const frameEl = getOrCreateViewerFrame();
+
   frameEl.style.display = 'block';
 
-  if (!frameEl.name) {
-    frameEl.name = 'scramjet-frame';
+  if (!window.ScramjetHub.viewerFrameController) {
+    window.ScramjetHub.viewerFrameController =
+      controller.createFrame(frameEl);
   }
 
-  const frame = controller.createFrame(frameEl);
-  frame.go(url);
-  return frame;
+  window.ScramjetHub.viewerFrameController.go(url);
+  return window.ScramjetHub.viewerFrameController;
 }
 
 window.ScramjetHub = {
