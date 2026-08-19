@@ -8,14 +8,11 @@ if ('serviceWorker' in navigator) {
       });
 
       await navigator.serviceWorker.ready;
-
       console.log('✅ Scramjet SW ready:', registration.scope);
       window.dispatchEvent(new Event('scramjet-sw-ready'));
     } catch (error) {
       console.error('❌ Scramjet SW registration failed:', error);
-      window.dispatchEvent(
-        new CustomEvent('scramjet-sw-error', { detail: error })
-      );
+      window.dispatchEvent(new CustomEvent('scramjet-sw-error', { detail: error }));
     }
   });
 }
